@@ -1,3 +1,4 @@
+const AppError = require('../utils/appError');
 //Handling Mongo CastError => Occurs when we have invalid database _id
 const handleCastErrorDB = (err) => {
 	const message = `Invalid ${err.path}: ${err.value}.`;
@@ -6,7 +7,7 @@ const handleCastErrorDB = (err) => {
 
 //Handling MongoError => Occurs when we have duplicate database fields
 const handleDuplicateFieldsDB = (err) => {
-	const value = err.errmsg.match(/(["'])(\\?.)*?\1/)[0];
+	const value = err.message.match(/(["'])(\\?.)*?\1/)[0];
 
 	const message = `Duplicate field value: ${value}. Please use another value!`;
 	return new AppError(message, 400);
@@ -33,18 +34,11 @@ const sendErrorDev = (err, res) => {
 // Send error when in production mode
 const sendErrorProd = (err, res) => {
 	//Operational error
-	if (err.isOperational) {
-		res.status(err.statusCode).json({
-			status: err.status,
-			message: err.message,
-		});
-	} else {
-		//Programming/Unknown error, (can be from some 3rd party library)
-		res.status(err.statusCode).json({
-			status: err.status,
-			message: 'Something went wrong!',
-		});
-	}
+
+	res.status(err.statusCode).json({
+		status: err.status,
+		message: err.message,
+	});
 };
 
 const errorHandler = (err, req, res, next) => {
@@ -56,6 +50,7 @@ const errorHandler = (err, req, res, next) => {
 	} else if (process.env.NODE_ENV === 'production') {
 		let error = { ...err }; //Create a deep copy
 		error.message = err.message;
+
 		if (error.name === 'CastError') {
 			error = handleCastErrorDB(error);
 		}
