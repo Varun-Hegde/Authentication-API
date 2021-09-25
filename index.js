@@ -6,7 +6,7 @@ const connectToDatabase = require('./config//db');
 
 const AppError = require('./utils/appError');
 const globalErrorHandler = require('./controllers/globalErrorController');
-//const UserRouter = require('./routes/userRoutes');
+const UserRouter = require('./routes/userRoutes');
 
 // Connect to database
 connectToDatabase();
@@ -26,7 +26,7 @@ app.get('/', (req, res) => {
 		},
 	});
 });
-//app.use('/api/users', UserRouter);
+app.use('/api/users', UserRouter);
 
 // Any other invalid route
 app.all('*', (req, res, next) => {
