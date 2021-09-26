@@ -1,18 +1,44 @@
 require('dotenv').config();
 const express = require('express');
 const morgan = require('morgan');
-const app = express();
-const connectToDatabase = require('./config//db');
+const rateLimit = require('express-rate-limit');
+const helmet = require('helmet');
+const mongoSanitize = require('express-mongo-sanitize');
+const xss = require('xss-clean');
 
+const connectToDatabase = require('./config//db');
 const AppError = require('./utils/appError');
 const globalErrorHandler = require('./controllers/globalErrorController');
 const UserRouter = require('./routes/userRoutes');
+
+const app = express();
 
 // Connect to database
 connectToDatabase();
 
 // Middleware
+// Set security HTTP headers
+app.use(helmet());
+
+// Limit repeated requests to our API
+if (process.env.NODE_ENV === 'production') {
+	const limiter = rateLimit({
+		max: 100,
+		windowMs: 60 * 60 * 1000,
+		message: 'Too many requests from this IP, please try again in an hour!',
+	});
+	app.use('/api', limiter);
+}
+
+// Body parser
 app.use(express.json());
+
+// Data sanitization against NoSQL query injection
+app.use(mongoSanitize());
+
+// Data sanitization against XSS
+app.use(xss());
+
 if (process.env.NODE_ENV === 'development') {
 	app.use(morgan('dev'));
 }
@@ -22,7 +48,7 @@ app.get('/', (req, res) => {
 	res.json({
 		status: 'success',
 		data: {
-			name: 'Varun',
+			message: 'API is running',
 		},
 	});
 });
