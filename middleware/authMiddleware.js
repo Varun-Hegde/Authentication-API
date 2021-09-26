@@ -34,7 +34,7 @@ const protect = catchAsync(async (req, res, next) => {
 	const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
 
 	// 3)
-	const currentUser = await User.findById(decoded.id);
+	const currentUser = await User.findById(decoded.id).select('-__v');
 	if (!currentUser) {
 		return next(
 			new AppError(
@@ -58,6 +58,24 @@ const protect = catchAsync(async (req, res, next) => {
 	next();
 });
 
+// Continue to controller only if the user's  role is one among the specified roles
+const restrictTo = (...roles) => {
+	return catchAsync(async (req, res, next) => {
+		//roles => [admin, user, moderator]
+		if (!roles.includes(req.user.role)) {
+			return next(
+				new AppError(
+					'You do not have permission to perform this action',
+					403,
+				),
+			);
+		}
+
+		next();
+	});
+};
+
 module.exports = {
 	protect,
+	restrictTo,
 };
