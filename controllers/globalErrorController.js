@@ -1,4 +1,5 @@
 const AppError = require('../utils/appError');
+
 //Handling Mongo CastError => Occurs when we have invalid database _id
 const handleCastErrorDB = (err) => {
 	const message = `Invalid ${err.path}: ${err.value}.`;

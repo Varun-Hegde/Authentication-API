@@ -52,6 +52,17 @@ const signup = catchAsync(async (req, res, next) => {
 		password: req.body.password,
 		passwordConfirm: req.body.passwordConfirm,
 	};
+	const userExists = await User.findOne({ email: req.body.email });
+
+	if (userExists) {
+		next(
+			new AppError(
+				'A user with this email already exists. Try using a different email',
+				401,
+			),
+		);
+		return;
+	}
 
 	const newUser = await User.create(queryObj);
 
@@ -173,7 +184,7 @@ const updatePassword = catchAsync(async (req, res, next) => {
 	// 4) Log user in, send JWT
 
 	// 1)
-	console.log(req.user._id);
+
 	const user = await User.findById(req.user._id).select('+password');
 
 	if (
@@ -182,10 +193,11 @@ const updatePassword = catchAsync(async (req, res, next) => {
 		!req.body.passwordConfirm
 	)
 		return next(new AppError('Current password and new password required'));
+
+	// 2)
 	if (
 		!(await user.correctPassword(req.body.passwordCurrent, user.password))
 	) {
-		// 2)
 		return next(new AppError('Your current password is wrong.', 401));
 	}
 
