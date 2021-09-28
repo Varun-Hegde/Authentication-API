@@ -4,6 +4,7 @@ const signToken = require('../utils/jwtTokens');
 const AppError = require('../utils/appError');
 const sendEmail = require('../utils/email');
 const { createHash } = require('crypto');
+const { use } = require('passport');
 
 //Helper function to create JWT and send a proper response
 const createSendToken = (user, statusCode, res) => {
@@ -21,11 +22,12 @@ const createSendToken = (user, statusCode, res) => {
 		cookieOptions.secure = true;
 	}
 
-	res.cookie('jwt', token, cookieOptions);
+	res.cookie('jwt', token, { httpOnly: true });
 
 	//Remove password
-	user.password = undefined;
+	user.local.password = undefined;
 	user.__v = undefined;
+
 	res.status(statusCode).json({
 		status: 'success',
 		token,
@@ -46,12 +48,6 @@ const filterObj = (obj, ...allowedFields) => {
 
 // Signup controller
 const signup = catchAsync(async (req, res, next) => {
-	const queryObj = {
-		name: req.body.name,
-		email: req.body.email,
-		password: req.body.password,
-		passwordConfirm: req.body.passwordConfirm,
-	};
 	const userExists = await User.findOne({ email: req.body.email });
 
 	if (userExists) {
@@ -63,7 +59,16 @@ const signup = catchAsync(async (req, res, next) => {
 		);
 		return;
 	}
-
+	const queryObj = {
+		methods: ['local'],
+		name: req.body.name,
+		email: req.body.email,
+		local: {
+			email: req.body.email,
+			password: req.body.password,
+			passwordConfirm: req.body.passwordConfirm,
+		},
+	};
 	const newUser = await User.create(queryObj);
 
 	createSendToken(newUser, 201, res);
@@ -83,15 +88,28 @@ const login = catchAsync(async (req, res, next) => {
 	}
 
 	// 2)
-	const user = await User.findOne({ email }).select('+password  -__v');
+	const user = await User.findOne({ email }).select('+local.password -__v');
 
-	if (!user || !(await user.correctPassword(password, user.password))) {
+	if (
+		!user ||
+		!user.methods.includes('local') ||
+		!(await user.correctPassword(password, user.local.password))
+	) {
 		return next(new AppError('Invalid email or password', 401));
 	}
 
 	// 3)
 	createSendToken(user, 200, res);
 });
+
+//Logout
+const logout = (req, res) => {
+	res.clearCookie('jwt');
+	res.status(200).json({
+		status: 'success',
+		message: 'Successfully logged out',
+	});
+};
 
 // Forgot password controller
 const forgotPassword = catchAsync(async (req, res, next) => {
@@ -103,7 +121,13 @@ const forgotPassword = catchAsync(async (req, res, next) => {
 	const user = await User.findOne({ email: req.body.email });
 	if (!user) {
 		return next(
-			new AppError('THere is no user with this email address.', 404),
+			new AppError('There is no user with this email address.', 404),
+		);
+	}
+
+	if (!user.methods.includes('local')) {
+		return next(
+			new AppError('Try logging in using your google account', 400),
 		);
 	}
 
@@ -131,7 +155,6 @@ If you didn't forget your password, please ignore this email`;
 			message: 'Token sent to your email!',
 		});
 	} catch (err) {
-		console.log(err);
 		user.passwordResetToken = undefined;
 		user.passwordResetExpires = undefined;
 		await user.save({ validateBeforeSave: false });
@@ -166,8 +189,9 @@ const resetPassword = catchAsync(async (req, res, next) => {
 		return next(new AppError('Token is invalid or has expired', 400));
 	}
 
-	user.password = req.body.password;
-	user.passwordConfirm = req.body.passwordConfirm;
+	user.local.password = req.body.password;
+	user.local.passwordConfirm = req.body.passwordConfirm;
+
 	user.passwordResetToken = undefined;
 	user.passwordResetExpires = undefined;
 	await user.save();
@@ -185,25 +209,36 @@ const updatePassword = catchAsync(async (req, res, next) => {
 
 	// 1)
 
-	const user = await User.findById(req.user._id).select('+password');
+	const user = await User.findById(req.user._id).select('+local.password');
 
 	if (
-		!req.body.passwordCurrent ||
+		(user.methods.includes('local') && !req.body.passwordCurrent) ||
 		!req.body.password ||
 		!req.body.passwordConfirm
 	)
 		return next(new AppError('Current password and new password required'));
 
 	// 2)
+
 	if (
-		!(await user.correctPassword(req.body.passwordCurrent, user.password))
+		user.methods.includes('local') &&
+		!(await user.correctPassword(
+			req.body.passwordCurrent,
+			user.local.password,
+		))
 	) {
 		return next(new AppError('Your current password is wrong.', 401));
 	}
 
 	// 3)
-	user.password = req.body.password;
-	user.passwordConfirm = req.body.passwordConfirm;
+	user.local.email = user.email;
+	user.local.password = req.body.password;
+	user.local.passwordConfirm = req.body.passwordConfirm;
+
+	if (!user.methods.includes('local')) {
+		user.methods.push('local');
+	}
+
 	await user.save();
 	// User.findByIdAndUpdate will NOT work as intended!
 
@@ -241,11 +276,56 @@ const updateUserData = catchAsync(async (req, res, next) => {
 	});
 });
 
+const googleAuth = catchAsync(async (req, res) => {
+	createSendToken(req.user, 200, res);
+});
+
+const linkGoogle = catchAsync(async (req, res) => {
+	res.status(200).json({
+		status: 'success',
+		message: 'Successfully linked your account with google',
+	});
+});
+
+const unLinkGoogle = catchAsync(async (req, res, next) => {
+	const googleLinked = req.user.methods.includes('google');
+	if (!googleLinked) {
+		next(new AppError('You need to first link your google account.', 400));
+		return;
+	}
+
+	const localMethod = req.user.methods.includes('local');
+
+	if (!localMethod) {
+		next(
+			new AppError(
+				'Add a password to this account. Only then you can unlink your google account',
+				400,
+			),
+		);
+		return;
+	}
+
+	req.user.google = undefined;
+	const googleStrPos = req.user.methods.indexOf('google');
+	req.user.methods.splice(googleStrPos, 1);
+	await req.user.save();
+
+	res.json({
+		status: 'success',
+		message: 'Successfully unlinked your account with google',
+	});
+});
+
 module.exports = {
 	signup,
 	login,
+	logout,
 	forgotPassword,
 	resetPassword,
 	updatePassword,
 	updateUserData,
+	googleAuth,
+	linkGoogle,
+	unLinkGoogle,
 };

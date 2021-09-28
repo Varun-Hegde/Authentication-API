@@ -14,6 +14,7 @@ const protect = catchAsync(async (req, res, next) => {
 
 	// 1)
 	let token;
+
 	if (
 		req.headers.authorization &&
 		req.headers.authorization.startsWith('Bearer')
@@ -33,6 +34,7 @@ const protect = catchAsync(async (req, res, next) => {
 	}
 
 	// 2)
+
 	const decoded = await promisify(jwt.verify)(token, process.env.JWT_SECRET);
 
 	// 3)
@@ -57,6 +59,7 @@ const protect = catchAsync(async (req, res, next) => {
 	}
 
 	req.user = currentUser;
+
 	next();
 });
 
