@@ -5,6 +5,7 @@ const rateLimit = require('express-rate-limit');
 const helmet = require('helmet');
 const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
+const cors = require('cors');
 const passport = require('passport');
 const passportFile = require('./passport');
 const connectToDatabase = require('./config//db');
@@ -20,7 +21,7 @@ connectToDatabase();
 // Middleware
 // Set security HTTP headers
 app.use(helmet());
-
+app.use(cors({ credentials: true }));
 // Limit repeated requests to our API
 if (process.env.NODE_ENV === 'production') {
 	const limiter = rateLimit({
